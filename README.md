@@ -105,3 +105,76 @@ Example 1: Two mainnet RPCs, human-readable output
      --rpc https://eth.llamarpc.com \
      --blocks 60 \
      --step 3 \
+     --tolerance-pct 25
+
+This will:
+- Connect to both RPC endpoints.
+- Sample baseFeePerGas from the last 60 blocks, every 3 blocks.
+- Compute per-endpoint median base fee.
+- Flag endpoints whose median deviates by 25% or more from the group median.
+
+Example 2: Using RPC_URLS env, JSON output for dashboards
+
+   export RPC_URLS="https://mainnet.infura.io/v3/YOUR_KEY,https://eth.llamarpc.com"
+   python app.py --json
+
+This will:
+- Read endpoints from RPC_URLS.
+- Use default sampling and tolerance.
+- Print a JSON report to stdout, suitable for ingestion into dashboards or CI pipelines.
+- Send all human-readable logs and warnings to stderr.
+
+JSON output format
+When you use --json, output is a single JSON object with this structure:
+
+- mode                 constant string "multi_rpc_gas_soundness".
+- generatedAtUtc       UTC timestamp string of when the report was generated.
+- timingSec            Total runtime in seconds.
+- params               Object describing the run parameters:
+  - blocks
+  - step
+  - tolerancePct
+  - timeoutSec
+- groups               Object keyed by chainId (as a string). Each group contains:
+  - chainId
+  - network           Human-readable network name, when known.
+  - globalMedianBaseFeeGwei
+  - endpoints         List of objects, one per RPC endpoint:
+    - rpcUrl
+    - chainId
+    - network
+    - clientVersion
+    - head
+    - start
+    - requestedSpan
+    - step
+    - sampledBlocks
+    - baseFeeMedianGwei
+    - baseFeeMinGwei
+    - baseFeeMaxGwei
+    - headBaseFeeGwei
+    - deviationPct          Percent deviation from group median.
+    - isOutlier             Boolean flag, true if deviation >= tolerancePct.
+
+Exit codes
+The script uses simple exit codes:
+- 0  Success, at least one endpoint analyzed and report produced.
+- 1  Invalid CLI arguments or unable to connect to a mandatory RPC.
+- 2  No endpoints could be analyzed successfully.
+
+Interpreting the report
+- A ✅ mark in human-readable output means this RPC is within the tolerance band.
+- A 🚨 mark means this RPC shows a median base fee that deviates by at least tolerancePct from the per-chain median.
+
+Large deviations can result from:
+- Node lag or sync issues.
+- Misconfigured gas parameters on rollup sequencers or gateways.
+- Non-EIP-1559 networks or custom gas logic.
+- Very different sampling windows when RPCs are behind different tip heights.
+
+This tool does not claim cryptographic proofs; it is meant to be a fast diagnostic to spot suspicious inconsistencies in fee views across providers.
+
+Notes and limitations
+- For non-EIP-1559 networks (or RPCs that do not expose baseFeePerGas), the script may sample zero blocks and report zero medians.
+- For chains with very low activity, short sampling windows may be noisy. You can increase --blocks or adjust --step to get a more stable signal.
+- This tool assumes all RPC URLs provided are for the same chain or family of chains. It groups by chainId, but you shou
